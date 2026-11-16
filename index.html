@@ -103,6 +103,11 @@ details li b{color:var(--text);font-weight:600}
 .code5{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .code5 input{text-align:center;font-size:28px;padding:10px 0;text-transform:uppercase;letter-spacing:0}
 .code5 input:focus{outline:none;border-color:var(--acc)}
+.mesas{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.mesaBtn{background:var(--steel2);color:#c9c9cf;border:1px solid var(--line);border-radius:8px;padding:11px 0;font:inherit;font-size:15px;letter-spacing:.06em;cursor:pointer}
+.mesaBtn:hover{border-color:#3a3a40}
+.mesaBtn.on{background:var(--acc);border-color:var(--acc);color:#000}
+@media (max-width:420px){.mesas{grid-template-columns:repeat(2,1fr)}}
 .foot{text-align:center;font-size:12px;color:var(--dim);margin-top:22px;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
 @media (max-width:620px){.state{font-size:30px}.handle{margin:0 24px 10px}.oven{padding:16px 14px}.knob{width:110px}.kw{width:110px}.kn{left:31px}.spec{margin-left:0;width:100%}}
 </style>
@@ -116,8 +121,9 @@ details li b{color:var(--text);font-weight:600}
 <section id="rx">
   <div class="oven seat" id="rxSeat">
     <span class="bolt b1"></span><span class="bolt b2"></span><span class="bolt b3"></span><span class="bolt b4"></span>
-    <div style="font-size:22px;letter-spacing:.04em;margin-bottom:4px">Mesa <span id="seatMesa">BLS-420</span></div>
-    <div class="sub" style="margin-bottom:14px">Escribe tu nombre para sentarte.</div>
+    <div style="font-size:22px;letter-spacing:.04em;margin-bottom:4px">Sentarse a la mesa</div>
+    <div class="sub" style="margin-bottom:14px">Elige la mesa que te pasó la cocina y escribe tu nombre.</div>
+    <div class="f" style="margin-bottom:12px"><label>MESA</label><div class="mesas" id="mesas"></div></div>
     <div class="f"><label for="nameIn">COMENSAL (TU NOMBRE)</label><input id="nameIn" type="text" maxlength="24" placeholder="Comensal"></div>
     <div style="margin-top:14px"><button class="btn pri" id="rxStart">Sentarse a la mesa</button></div>
     <div id="rxMsg"></div>
@@ -346,8 +352,18 @@ function makeMeters(el, ch) {
 
 
 /* ================= SALA ================= */
-const MESA = (() => { const h = decodeURIComponent(location.hash.replace('#', '')).toUpperCase(); return /^[A-Z0-9-]{3,20}$/.test(h) ? h : 'BLS-420'; })();
-$('seatMesa').textContent = MESA; $('rxCode').textContent = MESA;
+const MESAS = Array.from({ length: 8 }, (_, i) => 'BLS-' + (420 + i));
+let MESA = (() => { const h = decodeURIComponent(location.hash.replace('#', '')).toUpperCase(); return /^[A-Z0-9-]{3,20}$/.test(h) ? h : null; })();
+function renderMesas() {
+  const list = MESA && !MESAS.includes(MESA) ? MESAS.concat([MESA]) : MESAS;
+  $('mesas').innerHTML = list.map(m => `<button type="button" class="mesaBtn${m === MESA ? ' on' : ''}" data-m="${m}">${m}</button>`).join('');
+  $('mesas').querySelectorAll('.mesaBtn').forEach(b => b.onclick = () => {
+    MESA = b.dataset.m; renderMesas(); msg($('rxMsg'), '');
+    try { history.replaceState(null, '', location.pathname + location.search + '#' + MESA); } catch (e) {}
+  });
+}
+renderMesas();
+window.addEventListener('hashchange', () => { const h = location.hash.replace('#', '').toUpperCase(); if (/^[A-Z0-9-]{3,20}$/.test(h) && h !== MESA && !RX.want) { MESA = h; renderMesas(); } });
 const RX = { peer: null, conn: null, ctx: null, ctx0: null, node: null, gain: null, cfg: null, meters: null, want: false,
   expect: -1, lost: 0, bytes: 0, lastBytes: 0, rtt: null, lvl: null, under: 0, lastUnder: 0, target: 80, rec: null, recvLog: new Map(), retry: 0, t0: 0, closed: false };
 if (DEBUG) window.__RX = RX;
@@ -360,6 +376,8 @@ $('nameIn').onkeydown = e => { if (e.key === 'Enter') startRx(); };
 $('rxStart').onclick = startRx;
 
 function startRx() {
+  if (!MESA) { msg($('rxMsg'), 'Elige una mesa primero.', 'err'); return; }
+  $('rxCode').textContent = MESA;
   try { localStorage.setItem('hey-name', $('nameIn').value); } catch (e) {}
   msg($('rxMsg'), ''); msg($('rxMsg2'), '');
   RX.want = true; RX.retry = 0; RX.closed = false; RX.target = 80; RX.lastUnder = 0;
