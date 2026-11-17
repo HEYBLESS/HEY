@@ -383,7 +383,10 @@ function startRx() {
   RX.want = true; RX.retry = 0; RX.closed = false; RX.target = 80; RX.lastUnder = 0;
   $('rxSeat').classList.add('hidden'); $('rxLive').classList.remove('hidden');
   setWin($('rxWin'), $('rxState'), 'warm', 'EN CAMINO', 'CONECTANDO CON LA COCINA');
-  if (!RX.ctx0 || RX.ctx0.state === 'closed') RX.ctx0 = new AudioContext({ latencyHint: 'interactive' });
+  unlockAudio();
+  // se crea dentro del toque, a 48 kHz (lo más común en FL), para que el navegador permita el sonido
+  if (!RX.ctx0 || RX.ctx0.state === 'closed') { try { RX.ctx0 = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 }); } catch (e) { RX.ctx0 = new AudioContext({ latencyHint: 'interactive' }); } }
+  try { RX.ctx0.resume(); } catch (e) {}
   listOutputs();
   connectRx();
   clearInterval(RX.statT); RX.statT = setInterval(rxStats, 1000);
@@ -464,8 +467,29 @@ async function applyCfg(c) {
   try { await ctx.resume(); } catch (e) {}
   checkUnlock();
 }
-function checkUnlock() { $('unlockBtn').classList.toggle('hidden', !RX.ctx || RX.ctx.state === 'running'); }
-$('unlockBtn').onclick = async () => { if (RX.ctx) await RX.ctx.resume(); checkUnlock(); };
+function checkUnlock() {
+  const blocked = !!RX.ctx && RX.ctx.state !== 'running';
+  $('unlockBtn').classList.toggle('hidden', !blocked);
+  if (blocked && RX.cfg && !RX.closed) setWin($('rxWin'), $('rxState'), 'warm', 'TOCA PARA ESCUCHAR', 'EL NAVEGADOR BLOQUEÓ EL SONIDO');
+  return blocked;
+}
+// iPhone: que suene aunque esté en modo silencio, y desbloquear el audio con el primer toque
+let silentEl = null;
+function unlockAudio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  try {
+    if (!silentEl) {
+      silentEl = document.createElement('audio');
+      silentEl.setAttribute('playsinline', ''); silentEl.loop = true;
+      silentEl.src = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YUAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    }
+    const pr = silentEl.play(); if (pr && pr.catch) pr.catch(() => {});
+  } catch (e) {}
+  try { if (RX.ctx && RX.ctx.state !== 'running') RX.ctx.resume(); } catch (e) {}
+  try { if (RX.ctx0 && RX.ctx0 !== RX.ctx && RX.ctx0.state !== 'running') RX.ctx0.resume(); } catch (e) {}
+}
+$('unlockBtn').onclick = async () => { unlockAudio(); if (RX.ctx) { try { await RX.ctx.resume(); } catch (e) {} } checkUnlock(); };
+['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, () => { if (RX.want) { unlockAudio(); setTimeout(checkUnlock, 150); } }, { passive: true }));
 
 async function listOutputs() {
   if (!('setSinkId' in AudioContext.prototype)) { $('outSel').disabled = true; $('outSel').innerHTML = '<option>No disponible aquí</option>'; return; }
